@@ -303,7 +303,7 @@ with debug_expander:
 # ─────────────────────────────────────────────
 header_col1, header_col2 = st.columns([5, 1])
 with header_col1:
-    st.title("📰 고유가 피해지원금 뉴스 기사 모니터링(최신 200건)")
+    st.title("고유가 피해지원금 뉴스 모니터링(최신 200건)")
 with header_col2:
     st.write("")  # 수직 정렬용 여백
     if st.button("🔄 새로고침", use_container_width=True, type="primary"):

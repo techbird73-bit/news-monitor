@@ -40,7 +40,7 @@ def get_cache_slot(interval_seconds: int) -> int:
 # 페이지 설정
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="고유가 피해지원금 뉴스 모니터링",
+    page_title="고유가 피해지원금 뉴스 모니터링(최신 뉴스 200건)",
     page_icon="📰",
     layout="wide",
 )

@@ -9,11 +9,32 @@ import re
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+
+# ─────────────────────────────────────────────
+# 한국 표준시(KST) 설정
+# ─────────────────────────────────────────────
+KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> datetime:
+    """현재 한국 표준시(KST)를 반환"""
+    return datetime.now(KST)
+
+
+def get_cache_slot(interval_seconds: int) -> int:
+    """
+    자동 갱신 주기 단위로 시각을 슬롯화한 정수 반환.
+    캐시 키에 포함시켜 자동 갱신 시점에 새 데이터를 가져오도록 한다.
+    """
+    if interval_seconds <= 0:
+        return 0
+    return int(now_kst().timestamp()) // interval_seconds
 
 # ─────────────────────────────────────────────
 # 페이지 설정
@@ -130,10 +151,11 @@ def detect_negative(title: str, description: str) -> list[str]:
     return found
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _call_naver_api(
     query: str, client_id: str, client_secret: str,
     display: int, start: int, sort: str,
+    cache_slot: int = 0,  # 캐시 무효화용 시간 슬롯 (값 자체는 사용 안 함)
 ) -> dict:
     """네이버 뉴스 검색 API 단일 호출 (내부 함수)"""
     url = "https://openapi.naver.com/v1/search/news.json"
@@ -155,11 +177,15 @@ def _call_naver_api(
 def search_naver_news(
     query: str, client_id: str, client_secret: str,
     total: int = 200, sort: str = "date",
+    cache_slot: int = 0,
 ) -> dict:
     """
     네이버 뉴스 검색 API 호출 (페이지네이션 지원).
     네이버 API는 1회 호출당 최대 100건이므로
     100건 단위로 나눠서 호출 후 결과를 합칩니다.
+
+    cache_slot: 자동 갱신 주기 단위로 산출된 시간 슬롯 정수.
+                값이 바뀌면 캐시가 무효화되어 새 API 호출이 발생합니다.
     """
     PER_PAGE = 100  # API 한도
     all_items = []
@@ -173,6 +199,7 @@ def search_naver_news(
             data = _call_naver_api(
                 query, client_id, client_secret,
                 display=display, start=start, sort=sort,
+                cache_slot=cache_slot,
             )
         except requests.exceptions.HTTPError as e:
             # start가 네이버 API 한도(1000) 초과 등으로 실패하면 중단
@@ -246,6 +273,9 @@ with st.sidebar:
         st.caption("• 주민등록번호 (XXXXXX-XXXXXXX)")
         st.caption("• 주소 (시·도 + 시·군·구 + 동·읍·면)")
 
+    st.divider()
+    debug_expander = st.expander("🔧 자동 갱신 진단")
+
 # ─────────────────────────────────────────────
 # 자동 새로고침 (사이드바 설정값 적용)
 # ─────────────────────────────────────────────
@@ -256,6 +286,17 @@ if user_refresh_interval > 0:
     )
 else:
     auto_refresh_count = 0
+
+# 자동 갱신 진단 정보 (사이드바 디버그 패널)
+with debug_expander:
+    st.caption(f"**현재 시각 (KST)**: {now_kst().strftime('%H:%M:%S')}")
+    st.caption(f"**자동 갱신 주기**: {refresh_label}")
+    st.caption(f"**자동 새로고침 누적 횟수**: {auto_refresh_count}회")
+    st.caption(
+        "💡 페이지를 켜둔 상태로 갱신 주기만큼 기다리시면 "
+        "이 숫자가 자동으로 증가합니다. "
+        "증가하지 않으면 브라우저가 탭을 비활성 상태로 처리한 것입니다."
+    )
 
 # ─────────────────────────────────────────────
 # 메인 화면
@@ -269,18 +310,18 @@ with header_col2:
         st.cache_data.clear()
         st.rerun()
 
-now = datetime.now()
+now = now_kst()
 if user_refresh_interval > 0:
     st.caption(
         f'🔍 검색어: **"{query}"**　|　'
-        f"🕒 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')}**　|　"
+        f"🕒 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} (KST)**　|　"
         f"🔁 자동 갱신: **{refresh_label}마다** "
         f"(자동 새로고침 {auto_refresh_count}회 실행됨)"
     )
 else:
     st.caption(
         f'🔍 검색어: **"{query}"**　|　'
-        f"🕒 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')}**　|　"
+        f"🕒 마지막 갱신: **{now.strftime('%Y-%m-%d %H:%M:%S')} (KST)**　|　"
         f"🔁 자동 갱신: **사용 안 함** (수동 새로고침 버튼만 사용)"
     )
 
@@ -311,12 +352,21 @@ if not client_id or not client_secret:
         """)
     st.stop()
 
+# 자동 갱신 주기에 맞춘 캐시 슬롯 계산
+# (자동 갱신 시점에 새 API 호출이 보장되도록)
+if user_refresh_interval > 0:
+    refresh_seconds = user_refresh_interval // 1000
+else:
+    refresh_seconds = 600  # 자동 갱신 OFF 시 기본 10분 슬롯
+current_cache_slot = get_cache_slot(refresh_seconds)
+
 # 검색 실행
 try:
     with st.spinner(f'"{query}" 검색 중... (최대 {display_count}건)'):
         data = search_naver_news(
             query, client_id, client_secret,
             total=display_count, sort="date",
+            cache_slot=current_cache_slot,
         )
 except requests.exceptions.HTTPError as e:
     st.error(f"❌ 네이버 API 호출 실패: {e}\n\nAPI 키를 확인해 주세요.")
@@ -374,7 +424,10 @@ c4.metric("🗞️ 언론사 수", f"{press_count:,}곳")
 df = pd.DataFrame([{
     "제목": a["title"],
     "언론사": a["press"],
-    "발행일": a["pub_date"].strftime("%Y-%m-%d %H:%M") if a["pub_date"] != datetime.min else "",
+    "발행일": (
+        a["pub_date"].astimezone(KST).strftime("%Y-%m-%d %H:%M")
+        if a["pub_date"] != datetime.min else ""
+    ),
     "내용": a["description"],
     "부정요소": ", ".join(a["negatives"]),
     "링크": a["link"],
@@ -383,7 +436,7 @@ df = pd.DataFrame([{
 st.download_button(
     "📥 전체 결과 CSV 다운로드",
     data=df.to_csv(index=False).encode("utf-8-sig"),
-    file_name=f"news_{query.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+    file_name=f"news_{query.replace(' ', '_')}_{now_kst().strftime('%Y%m%d_%H%M')}.csv",
     mime="text/csv",
 )
 
@@ -424,11 +477,12 @@ for a in display_articles:
                 unsafe_allow_html=True,
             )
 
-        # 메타 정보
-        date_str = (
-            a["pub_date"].strftime("%Y-%m-%d %H:%M")
-            if a["pub_date"] != datetime.min else "날짜 미상"
-        )
+        # 메타 정보 (KST로 변환)
+        if a["pub_date"] != datetime.min:
+            pub_kst = a["pub_date"].astimezone(KST)
+            date_str = pub_kst.strftime("%Y-%m-%d %H:%M")
+        else:
+            date_str = "날짜 미상"
         st.caption(f"🗞️ **{a['press']}**　|　📅 {date_str}")
 
         # 본문 일부

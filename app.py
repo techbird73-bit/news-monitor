@@ -31,9 +31,22 @@ DEFAULT_QUERY = "고유가 피해지원금"
 
 # 부정 키워드 (사장님이 자유롭게 추가/수정 가능)
 NEGATIVE_KEYWORDS = [
+    # 운영·서비스 관련
     "불편", "장애", "오류", "지연", "차질", "혼란", "실패",
     "누락", "민원", "항의", "비판", "논란", "문제점", "지적",
-    "개인정보", "유출", "노출", "누설", "해킹", "도용", "사기",
+    # 보안·피싱·개인정보 관련 (대폭 확장)
+    "개인정보", "유출", "노출", "누설", "도용", "사기",
+    "해킹", "악성코드", "악성 코드", "악성앱", "악성 앱",
+    "피싱", "보이스피싱", "보이스 피싱",
+    "스미싱", "큐싱", "파밍",
+    "메신저피싱", "메신저 피싱", "사칭", "명의도용", "정보탈취",
+    "앱푸시", "앱 푸시", "푸시알림", "푸시 알림",
+    "가짜 URL", "의심 URL",
+    # 가짜뉴스·허위정보 관련
+    "가짜뉴스", "가짜 뉴스", "허위정보", "허위 정보",
+    "허위사실", "거짓정보", "거짓 정보", "오정보",
+    "왜곡", "조작", "선동", "유언비어", "루머", "유포",
+    "딥페이크", "팩트체크",
 ]
 
 # 개인정보 정규식 패턴
@@ -118,21 +131,75 @@ def detect_negative(title: str, description: str) -> list[str]:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def search_naver_news(
+def _call_naver_api(
     query: str, client_id: str, client_secret: str,
-    display: int = 100, sort: str = "date",
+    display: int, start: int, sort: str,
 ) -> dict:
-    """네이버 뉴스 검색 API 호출 (10분 캐시)"""
+    """네이버 뉴스 검색 API 단일 호출 (내부 함수)"""
     url = "https://openapi.naver.com/v1/search/news.json"
     headers = {
         "X-Naver-Client-Id": client_id,
         "X-Naver-Client-Secret": client_secret,
     }
-    params = {"query": query, "display": display, "sort": sort}
+    params = {
+        "query": query,
+        "display": display,
+        "start": start,
+        "sort": sort,
+    }
     response = requests.get(url, headers=headers, params=params, timeout=10)
     response.raise_for_status()
     return response.json()
 
+
+def search_naver_news(
+    query: str, client_id: str, client_secret: str,
+    total: int = 200, sort: str = "date",
+) -> dict:
+    """
+    네이버 뉴스 검색 API 호출 (페이지네이션 지원).
+    네이버 API는 1회 호출당 최대 100건이므로
+    100건 단위로 나눠서 호출 후 결과를 합칩니다.
+    """
+    PER_PAGE = 100  # API 한도
+    all_items = []
+    fetched = 0
+    start = 1
+
+    while fetched < total:
+        remaining = total - fetched
+        display = min(PER_PAGE, remaining)
+        try:
+            data = _call_naver_api(
+                query, client_id, client_secret,
+                display=display, start=start, sort=sort,
+            )
+        except requests.exceptions.HTTPError as e:
+            # start가 네이버 API 한도(1000) 초과 등으로 실패하면 중단
+            if fetched > 0:
+                break
+            raise e
+
+        items = data.get("items", [])
+        if not items:
+            break
+
+        all_items.extend(items)
+        fetched += len(items)
+        start += display
+
+        # 응답이 요청한 개수보다 적으면 더 이상 결과가 없음
+        if len(items) < display:
+            break
+
+    return {"items": all_items, "total": len(all_items)}
+
+
+# ─────────────────────────────────────────────
+# API 인증 정보 로드 (Streamlit Secrets에서)
+# ─────────────────────────────────────────────
+client_id = st.secrets.get("NAVER_CLIENT_ID", "")
+client_secret = st.secrets.get("NAVER_CLIENT_SECRET", "")
 
 # ─────────────────────────────────────────────
 # 사이드바: 설정
@@ -140,23 +207,9 @@ def search_naver_news(
 with st.sidebar:
     st.header("⚙️ 설정")
 
-    st.subheader("🔑 네이버 API 인증")
-    client_id = st.text_input(
-        "Client ID",
-        value=st.secrets.get("NAVER_CLIENT_ID", ""),
-        type="password",
-        help="https://developers.naver.com 에서 발급",
-    )
-    client_secret = st.text_input(
-        "Client Secret",
-        value=st.secrets.get("NAVER_CLIENT_SECRET", ""),
-        type="password",
-    )
-
-    st.divider()
     st.subheader("🔍 검색 옵션")
     query = st.text_input("검색어", value=DEFAULT_QUERY)
-    display_count = st.slider("검색 결과 수", 10, 100, 50, step=10)
+    display_count = st.slider("검색 결과 수", 10, 200, 200, step=10)
 
     st.divider()
     st.subheader("👁️ 표시 옵션")
@@ -233,29 +286,40 @@ else:
 
 # API 키 확인
 if not client_id or not client_secret:
-    st.warning("⚠️ 사이드바에서 네이버 API의 Client ID와 Client Secret을 입력해 주세요.")
-    with st.expander("📖 API 키 발급 방법", expanded=True):
+    st.error("⚠️ 네이버 API 인증 정보가 설정되지 않았습니다.")
+    with st.expander("📖 API 키 설정 방법", expanded=True):
         st.markdown("""
-        1. [네이버 개발자센터](https://developers.naver.com/apps/#/register) 접속
-        2. **애플리케이션 등록** 클릭
-        3. **애플리케이션 이름** 입력 (예: 뉴스모니터링)
-        4. **사용 API**에서 **검색** 선택
-        5. **환경**: WEB 설정 (URL은 `http://localhost` 입력)
-        6. 등록 후 발급된 **Client ID**, **Client Secret**을 사이드바에 입력
-        
-        > 무료 일일 25,000건 호출 가능합니다.
+        ### Streamlit Cloud에 배포된 경우
+        1. [share.streamlit.io](https://share.streamlit.io) 접속
+        2. 앱 이름 클릭 → 우측 **⋮ → Settings → Secrets**
+        3. 아래 형식으로 입력 후 **Save**:
+        ```toml
+        NAVER_CLIENT_ID = "발급받은_Client_ID"
+        NAVER_CLIENT_SECRET = "발급받은_Client_Secret"
+        ```
+
+        ### 로컬 PC에서 실행하는 경우
+        프로젝트 폴더의 `.streamlit/secrets.toml` 파일을 다음과 같이 작성:
+        ```toml
+        NAVER_CLIENT_ID = "발급받은_Client_ID"
+        NAVER_CLIENT_SECRET = "발급받은_Client_Secret"
+        ```
+
+        ### API 키가 없으신 경우
+        [네이버 개발자센터](https://developers.naver.com/apps/#/register)에서
+        애플리케이션 등록 → **검색 API** 선택 후 무료로 발급받으실 수 있습니다.
         """)
     st.stop()
 
 # 검색 실행
 try:
-    with st.spinner(f'"{query}" 검색 중...'):
+    with st.spinner(f'"{query}" 검색 중... (최대 {display_count}건)'):
         data = search_naver_news(
             query, client_id, client_secret,
-            display=display_count, sort="date",
+            total=display_count, sort="date",
         )
 except requests.exceptions.HTTPError as e:
-    st.error(f"❌ 네이버 API 호출 실패: {e}\n\nClient ID/Secret을 확인해 주세요.")
+    st.error(f"❌ 네이버 API 호출 실패: {e}\n\nAPI 키를 확인해 주세요.")
     st.stop()
 except Exception as e:
     st.error(f"❌ 오류 발생: {e}")

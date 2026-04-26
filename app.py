@@ -53,10 +53,11 @@ DEFAULT_QUERY = "고유가 피해지원금"
 # 부정 키워드 (사장님이 자유롭게 추가/수정 가능)
 NEGATIVE_KEYWORDS = [
     # 운영·서비스 관련
-    "불편", "장애", "오류", "지연", "차질", "혼란", "실패",
+    "불편", "신청 장애", "서비스 장애", "시스템 장애", "홈페이지 장애", "창구 장애", "오류", "지연", "차질", "혼란", "실패",
     "누락", "민원", "항의", "비판", "논란", "문제점", "지적",
     # 보안·피싱·개인정보 관련 (대폭 확장)
     "개인정보", "유출", "노출", "누설", "도용", "사기",
+    "카드깡", "특별 단속", "특별단속", "위반", "불법 행위", "불법행위",
     "해킹", "악성코드", "악성 코드", "악성앱", "악성 앱",
     "피싱", "보이스피싱", "보이스 피싱",
     "스미싱", "큐싱", "파밍",
@@ -464,7 +465,7 @@ for a in display_articles:
                 f'text-decoration:none;">{a["title"]}</a>'
                 f'<span style="background:#ffebee; color:#d32f2f; padding:3px 10px; '
                 f'border-radius:12px; font-size:12px; margin-left:10px; '
-                f'font-weight:600; vertical-align:middle;">⚠️ 부정적</span>'
+                f'font-weight:600; vertical-align:middle;">⚠️ 주의</span>'
                 f"</div>",
                 unsafe_allow_html=True,
             )

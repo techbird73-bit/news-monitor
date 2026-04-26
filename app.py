@@ -2,7 +2,7 @@
 고유가 피해지원금 뉴스 모니터링 대시보드
 - 네이버 뉴스 검색 API 연동
 - 최신순 정렬
-- 부정 키워드 / 개인정보 노출 자동 탐지
+- 주의 키워드 / 개인정보 노출 자동 탐지
 """
 
 import re
@@ -50,7 +50,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 DEFAULT_QUERY = "고유가 피해지원금"
 
-# 부정 키워드 (사장님이 자유롭게 추가/수정 가능)
+# 주의 키워드 (사장님이 자유롭게 추가/수정 가능)
 NEGATIVE_KEYWORDS = [
     # 운영·서비스 관련
     "불편", "신청 장애", "서비스 장애", "시스템 장애", "홈페이지 장애", "창구 장애", "오류", "지연", "차질", "혼란", "실패",
@@ -140,7 +140,7 @@ def parse_pub_date(pub_date: str) -> datetime:
 
 
 def detect_negative(title: str, description: str) -> list[str]:
-    """부정 키워드와 개인정보 노출 패턴 탐지"""
+    """주의 키워드와 개인정보 노출 패턴 탐지"""
     text = f"{title} {description}"
     found = [kw for kw in NEGATIVE_KEYWORDS if kw in text]
     if PHONE_PATTERN.search(text):
@@ -241,7 +241,7 @@ with st.sidebar:
 
     st.divider()
     st.subheader("👁️ 표시 옵션")
-    show_negative_only = st.checkbox("부정 기사만 표시")
+    show_negative_only = st.checkbox("주의 기사만 표시")
 
     st.divider()
     st.subheader("🔁 자동 새로고침")
@@ -267,7 +267,7 @@ with st.sidebar:
 
     st.divider()
     with st.expander("📋 탐지 규칙 보기"):
-        st.caption("**부정 키워드**")
+        st.caption("**주의 키워드**")
         st.caption(", ".join(NEGATIVE_KEYWORDS))
         st.caption("**자동 탐지 패턴**")
         st.caption("• 휴대폰번호 (010-XXXX-XXXX)")
@@ -412,7 +412,7 @@ press_count = len({a["press"] for a in articles})
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("📊 전체 기사", f"{total:,}건")
 c2.metric(
-    "⚠️ 부정 기사", f"{neg_count:,}건",
+    "⚠️ 주의 기사", f"{neg_count:,}건",
     delta=f"{neg_count / total * 100:.1f}%" if total else "0%",
     delta_color="inverse",
 )
@@ -430,7 +430,7 @@ df = pd.DataFrame([{
         if a["pub_date"] != datetime.min else ""
     ),
     "내용": a["description"],
-    "부정요소": ", ".join(a["negatives"]),
+    "주의요소": ", ".join(a["negatives"]),
     "링크": a["link"],
 } for a in articles])
 
@@ -489,7 +489,7 @@ for a in display_articles:
         # 본문 일부
         st.write(a["description"])
 
-        # 탐지된 부정 요소 배지
+        # 탐지된 주의 요소 배지
         if a["negatives"]:
             badges = " ".join([
                 f'<span style="background:#fff3e0; color:#e65100; '

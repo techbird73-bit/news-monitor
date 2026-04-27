@@ -147,8 +147,8 @@ def detect_negative(title: str, description: str) -> list[str]:
         found.append("📱휴대폰")
     if RESIDENT_PATTERN.search(text):
         found.append("🆔주민번호")
-    if ADDRESS_PATTERN.search(text):
-        found.append("🏠주소")
+    #if ADDRESS_PATTERN.search(text):
+    #    found.append("🏠주소")
     return found
 
 
@@ -272,7 +272,7 @@ with st.sidebar:
         st.caption("**자동 탐지 패턴**")
         st.caption("• 휴대폰번호 (010-XXXX-XXXX)")
         st.caption("• 주민등록번호 (XXXXXX-XXXXXXX)")
-        st.caption("• 주소 (시·도 + 시·군·구 + 동·읍·면)")
+        #st.caption("• 주소 (시·도 + 시·군·구 + 동·읍·면)")
 
     st.divider()
     debug_expander = st.expander("🔧 자동 갱신 진단")
